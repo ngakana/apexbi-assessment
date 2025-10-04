@@ -91,5 +91,46 @@ public static class Endpoints
         })
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status405MethodNotAllowed);
+
+        app.MapGet("/api/SIM/{id}", async (int id, AppDbContext db) =>
+        {
+            try
+            {
+                var dataset = await db.Datasets
+                    .AsNoTracking()
+                    .FirstAsync(d => d.Id == id);
+                if (dataset is null) return Results.NotFound();
+
+                var query = db.SimCards.Where(s => s.DatasetId == id);
+                var count = await query.CountAsync();
+                var with123Count = await query.CountAsync(s => s.PhoneNumberString.Contains("123"));
+                var modalAreaCodesQuery = query
+                    .Select(s => s.PhoneNumberString.Substring(0, 3))
+                    .GroupBy(code => code)
+                    .OrderByDescending(g => g.Count());
+                var maxGroupCount = await modalAreaCodesQuery
+                    .Select(g => g.Count())
+                    .FirstOrDefaultAsync();
+                var modalAreaCodes = await modalAreaCodesQuery
+                    .Where(g => g.Count() == maxGroupCount)
+                    .Select(x => x.Key)
+                    .ToListAsync();
+                var metrics = new DatasetMetricsDto
+                {
+                    Id = id,
+                    RowCount = count,
+                    PhoneNumberWith123Count = with123Count,
+                    ModalAreaCodes = modalAreaCodes
+                };
+                return Results.Ok(metrics);
+            }
+            catch
+            {
+                return Results.StatusCode(405);
+            }
+        })
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status405MethodNotAllowed);
     }
 }
