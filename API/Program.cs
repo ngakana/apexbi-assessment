@@ -1,6 +1,7 @@
 using API;
 using API.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,7 +13,32 @@ builder.Services
 
 builder.Services.AddAntiforgery();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "Enter 'Bearer' [space] and then your token.",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
+
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
 
 var app = builder.Build();
 
@@ -30,6 +56,37 @@ if (builder.Configuration.GetValue<bool>("EnableSwaggerUI"))
 }
 
 app.UseAntiforgery();
+
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path == "/" ||
+        context.Request.Path.StartsWithSegments("/swagger") ||
+        context.Request.Path.StartsWithSegments("/auth"))
+    {
+        await next.Invoke();
+        return;
+    }
+
+    var tokenValue = builder.Configuration.GetValue<string>("bearerToken");
+    if (!context.Request.Headers.TryGetValue("Authorization", out var authHeader) ||
+        string.IsNullOrWhiteSpace(authHeader) ||
+        !authHeader.ToString().StartsWith("Bearer ") ||
+        authHeader.ToString() != $"Bearer {tokenValue}")
+    {
+        context.Response.StatusCode = 401;
+        await context.Response.WriteAsync("Unauthorized");
+        return;
+    }
+    await next.Invoke();
+});
+
+app.MapGet("/auth/getToken", () =>
+{
+    return Results.Ok(new
+    {
+        Token = builder.Configuration.GetValue<string>("bearerToken")
+    });
+});
 
 app.RegisterMyEndpoints();
 
