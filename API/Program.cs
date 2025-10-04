@@ -9,6 +9,9 @@ var dbPath = Path.Combine(home, builder.Configuration.GetValue<string>("Database
 builder.Services
     .AddDbContext<AppDbContext>(options => options.UseSqlite($"Data Source={dbPath}"));
 
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
 var app = builder.Build();
 
 // Ensure database is created and latest migrations are applied
@@ -16,6 +19,12 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.EnsureCreated();
+}
+
+if (builder.Configuration.GetValue<bool>("EnableSwaggerUI"))
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
 }
 
 app.UseHttpsRedirection();
