@@ -1,3 +1,4 @@
+using API;
 using API.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +10,7 @@ var dbPath = Path.Combine(home, builder.Configuration.GetValue<string>("Database
 builder.Services
     .AddDbContext<AppDbContext>(options => options.UseSqlite($"Data Source={dbPath}"));
 
+builder.Services.AddAntiforgery();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -26,6 +28,10 @@ if (builder.Configuration.GetValue<bool>("EnableSwaggerUI"))
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+
+app.UseAntiforgery();
+
+app.RegisterMyEndpoints();
 
 app.UseHttpsRedirection();
 
