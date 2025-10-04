@@ -2,6 +2,7 @@
 using API.Data.DTOs;
 using API.Data.Entities;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
 
 namespace API;
@@ -71,5 +72,24 @@ public static class Endpoints
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status405MethodNotAllowed)
         .DisableAntiforgery();
+
+        app.MapGet("/api/SIM", async (AppDbContext db) =>
+        {
+            List<DatasetDto> datasets = [];
+            try
+            {
+                datasets = await db.Datasets
+                    .AsNoTracking()
+                    .Select(x => new DatasetDto(x.Id, x.UploadDate))
+                    .ToListAsync();
+            }
+            catch
+            {
+                return Results.StatusCode(405);
+            }
+            return Results.Ok(datasets);
+        })
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status405MethodNotAllowed);
     }
 }
