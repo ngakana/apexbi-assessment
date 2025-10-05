@@ -17,6 +17,7 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<IDatasetRepository, DatasetRepository>();
 builder.Services.AddScoped<ISimCardRepository, SimCardRepository>();
 
+builder.Services.AddProblemDetails();
 builder.Services.AddAntiforgery();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -47,6 +48,8 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
+
+app.UseExceptionHandler();
 
 // Ensure database is created and latest migrations are applied
 using (var scope = app.Services.CreateScope())

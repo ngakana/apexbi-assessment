@@ -22,7 +22,10 @@ public static class Endpoints
             if (file is null ||
                 file.Length == 0 ||
                !file.FileName.EndsWith("json", StringComparison.InvariantCultureIgnoreCase))
-                return Results.StatusCode(405);
+                return TypedResults.Problem(
+                    statusCode: 405,
+                    title: "Unsupported File Format",
+                    detail: "Only JSON files are supported.");
 
             SimDataWrapper? simDataWrapper;
             try
@@ -33,7 +36,10 @@ public static class Endpoints
             }
             catch
             {
-                return Results.StatusCode(405);
+                return TypedResults.Problem(
+                    statusCode: 405,
+                    title: "Invalid Input",
+                    detail: "JSON file schema is invalid. File schema does not match expected schema.");
             }
 
             if (simDataWrapper is null || !simDataWrapper.SimCards.Any())
@@ -84,21 +90,25 @@ public static class Endpoints
                     .Select(x => new DatasetDto(x.Id, x.UploadDate))
                     .ToListAsync(ct);
             }
-            catch
+            catch (Exception ex)
             {
-                return Results.StatusCode(405);
+                return TypedResults.Problem(
+                    statusCode: 405,
+                    title: "Exception Occured",
+                    detail: ex.Message);
             }
             return Results.Ok(datasets);
         })
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status405MethodNotAllowed);
 
-        app.MapGet("/api/SIM/{id}", async (int id, IUnitOfWork uow) =>
+        app.MapGet("/api/SIM/{id}", async (int id, IUnitOfWork uow) =>  
         {
             try
             {
                 var dataset = await uow.DatasetRepository.GetByIdAsync(id);
-                if (dataset is null) return Results.NotFound();
+                if (dataset is null)
+                    return TypedResults.BadRequest("Dataset not found");
 
                 var query = uow.SimCardRepository
                     .GetAsQueryable()
@@ -137,9 +147,12 @@ public static class Endpoints
                 };
                 return Results.Ok(metrics);
             }
-            catch
+            catch (Exception ex)
             {
-                return Results.StatusCode(405);
+                return TypedResults.Problem(
+                    statusCode: 405,
+                    title: "Something went wrong!",
+                    detail: ex.Message);
             }
         })
         .Produces(StatusCodes.Status200OK)
