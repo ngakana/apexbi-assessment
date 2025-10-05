@@ -1,5 +1,7 @@
 using API;
 using API.Data;
+using API.Repositories.Abstract;
+using API.Repositories.Concrete;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 
@@ -10,6 +12,10 @@ var home = Environment.GetEnvironmentVariable("HOME") ?? Directory.GetCurrentDir
 var dbPath = Path.Combine(home, builder.Configuration.GetValue<string>("DatabaseName")!);
 builder.Services
     .AddDbContext<AppDbContext>(options => options.UseSqlite($"Data Source={dbPath}"));
+
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<IDatasetRepository, DatasetRepository>();
+builder.Services.AddScoped<ISimCardRepository, SimCardRepository>();
 
 builder.Services.AddAntiforgery();
 builder.Services.AddEndpointsApiExplorer();

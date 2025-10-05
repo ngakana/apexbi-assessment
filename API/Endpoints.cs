@@ -1,6 +1,6 @@
-﻿using API.Data;
-using API.Data.DTOs;
+﻿using API.Data.DTOs;
 using API.Data.Entities;
+using API.Repositories.Abstract;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -11,8 +11,13 @@ public static class Endpoints
 {
     public static void RegisterMyEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/SIM", async ([FromForm] DatasetUploadDto payload, AppDbContext db) =>
+        app.MapPost("/api/SIM", async (
+            [FromForm] DatasetUploadDto payload,
+            IUnitOfWork uow,
+            CancellationToken ct) =>
         {
+            if (payload is null) 
+                return Results.BadRequest("Missing dataset file. Please upload JSON file.");
             var file = payload.File;
             if (file is null ||
                 file.Length == 0 ||
@@ -34,13 +39,9 @@ public static class Endpoints
             if (simDataWrapper is null || !simDataWrapper.SimCards.Any())
                 return Results.BadRequest("Empty data set.");
 
-            var dataset = new Dataset
-            {
-                UploadDate = DateTime.UtcNow
-            };
-            db.Datasets.Add(dataset);
-            var affected = await db.SaveChangesAsync();
-            Console.WriteLine($"Rows written: {affected}");
+            var dataset = new Dataset();
+            await uow.DatasetRepository.AddAsync(dataset, ct);
+            await uow.SaveChangesAsync();
 
             foreach (var item in simDataWrapper.SimCards)
             {
@@ -61,11 +62,10 @@ public static class Endpoints
                     LockDate = item.LockDate,
                     CanLock = item.CanLock
                 };
-                db.SimCards.Add(simcard);
+                await uow.SimCardRepository.AddAsync(simcard, ct);
             }
-            var affected1 = await db.SaveChangesAsync();
-            Console.WriteLine($"Rows written: {affected1}");
-
+            
+            await uow.SaveChangesAsync();
             return Results.Ok();
         })
         .Accepts<DatasetUploadDto>("multipart/form-data")
@@ -73,15 +73,16 @@ public static class Endpoints
         .Produces(StatusCodes.Status405MethodNotAllowed)
         .DisableAntiforgery();
 
-        app.MapGet("/api/SIM", async (AppDbContext db) =>
+        app.MapGet("/api/SIM", async (IUnitOfWork uow, CancellationToken ct) =>
         {
             List<DatasetDto> datasets = [];
             try
             {
-                datasets = await db.Datasets
+                datasets = await uow.DatasetRepository
+                    .GetAsQueryable()
                     .AsNoTracking()
                     .Select(x => new DatasetDto(x.Id, x.UploadDate))
-                    .ToListAsync();
+                    .ToListAsync(ct);
             }
             catch
             {
@@ -92,16 +93,16 @@ public static class Endpoints
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status405MethodNotAllowed);
 
-        app.MapGet("/api/SIM/{id}", async (int id, AppDbContext db) =>
+        app.MapGet("/api/SIM/{id}", async (int id, IUnitOfWork uow) =>
         {
             try
             {
-                var dataset = await db.Datasets
-                    .AsNoTracking()
-                    .FirstAsync(d => d.Id == id);
+                var dataset = await uow.DatasetRepository.GetByIdAsync(id);
                 if (dataset is null) return Results.NotFound();
 
-                var query = db.SimCards.Where(s => s.DatasetId == id);
+                var query = uow.SimCardRepository
+                    .GetAsQueryable()
+                    .Where(s => s.DatasetId == id);
                 var count = await query.CountAsync();
                 var with123Count = await query.CountAsync(s => s.PhoneNumberString.Contains("123"));
                 var modalAreaCodesQuery = query
@@ -115,12 +116,24 @@ public static class Endpoints
                     .Where(g => g.Count() == maxGroupCount)
                     .Select(x => x.Key)
                     .ToListAsync();
+                
+                if (modalAreaCodes.Count > 1)
+                {
+                    return Results.Ok(new DatasetMetricsv2Dto
+                    {
+                        Id = id,
+                        RowCount = count,
+                        PhoneNumberWith123Count = with123Count,
+                        ModalAreaCodes = modalAreaCodes
+                    });
+                }
+
                 var metrics = new DatasetMetricsDto
                 {
                     Id = id,
                     RowCount = count,
                     PhoneNumberWith123Count = with123Count,
-                    ModalAreaCodes = modalAreaCodes
+                    ModalAreaCode = modalAreaCodes.First()
                 };
                 return Results.Ok(metrics);
             }
