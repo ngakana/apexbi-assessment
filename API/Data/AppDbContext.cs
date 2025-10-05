@@ -25,5 +25,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 v => v.HasValue ? v.Value.ToUniversalTime() : v.Value,
                 v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
             );
+
+        modelBuilder.Entity<Dataset>()
+            .HasIndex(d => d.FileHash)
+            .IsUnique();
     }
 }

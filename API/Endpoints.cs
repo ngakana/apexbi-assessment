@@ -3,6 +3,7 @@ using API.Data.Entities;
 using API.Repositories.Abstract;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace API;
@@ -16,7 +17,7 @@ public static class Endpoints
             IUnitOfWork uow,
             CancellationToken ct) =>
         {
-            if (payload is null) 
+            if (payload is null)
                 return Results.BadRequest("Missing dataset file. Please upload JSON file.");
             var file = payload.File;
             if (file is null ||
@@ -45,7 +46,18 @@ public static class Endpoints
             if (simDataWrapper is null || !simDataWrapper.SimCards.Any())
                 return Results.BadRequest("Empty data set.");
 
-            var dataset = new Dataset();
+            using var sha = SHA256.Create();
+            using var stream = file.OpenReadStream();
+            var hashBytes = sha.ComputeHash(stream);
+            var hashString = Convert.ToHexString(hashBytes);
+
+            var exists = await uow.DatasetRepository
+            .GetAsQueryable()
+            .AsNoTracking()
+            .FirstOrDefaultAsync(d => d.FileHash == hashString, ct);
+            if (exists != null)
+                return Results.Conflict("Dataset with the same data already uploaded.");
+            var dataset = new Dataset(hashString);
             await uow.DatasetRepository.AddAsync(dataset, ct);
             await uow.SaveChangesAsync();
 
@@ -70,7 +82,7 @@ public static class Endpoints
                 };
                 await uow.SimCardRepository.AddAsync(simcard, ct);
             }
-            
+
             await uow.SaveChangesAsync();
             return Results.Ok();
         })
@@ -108,7 +120,7 @@ public static class Endpoints
             {
                 var dataset = await uow.DatasetRepository.GetByIdAsync(id);
                 if (dataset is null)
-                    return TypedResults.BadRequest("Dataset not found");
+                    return TypedResults.BadRequest($"Dataset with id {id} does not exist.");
 
                 var query = uow.SimCardRepository
                     .GetAsQueryable()
