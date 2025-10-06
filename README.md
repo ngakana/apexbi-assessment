@@ -6,7 +6,7 @@ Once on Visual Studio you can the project in one of the configurations listed be
 <br>
 ![alt text](runmodes.png)
 <br>
-<strong>NB:</strong> To run the project using a Docker container you need Docker desktop installed and running on your devlopment machine. The API will also report dates in the containers time zone.
+<strong>NB:</strong> To run the project using a Docker container you need Docker desktop installed and running on your devlopment machine. The API will also report dates in the time zone of the container or instance in Docker or Azure's app service.
 ## Spec
 ### Database Design
 The API data is persisted in SQLite database. See data schema for Datasets and Sim Cards tables below:
