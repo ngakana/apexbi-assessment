@@ -16,14 +16,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             .Property(d => d.UploadDate)
             .HasConversion(
                 v => v.ToUniversalTime(),
-                v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
+                v => DateTime.SpecifyKind(v, DateTimeKind.Utc).ToLocalTime()
             );
 
         modelBuilder.Entity<SimCard>()
             .Property(d => d.AddedDate)
             .HasConversion(
                 v => v.HasValue ? v.Value.ToUniversalTime() : v.Value,
-                v => DateTime.SpecifyKind(v, DateTimeKind.Utc)
+                v => DateTime.SpecifyKind(v, DateTimeKind.Utc).ToLocalTime()
             );
 
         modelBuilder.Entity<Dataset>()
