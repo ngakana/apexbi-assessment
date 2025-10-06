@@ -1,10 +1,9 @@
-﻿using API.Data.DTOs;
+﻿using API.Common;
+using API.Data.DTOs;
 using API.Data.Entities;
 using API.Repositories.Abstract;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using System.Security.Cryptography;
-using System.Text.Json;
 
 namespace API;
 
@@ -12,79 +11,57 @@ public static class Endpoints
 {
     public static void RegisterMyEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/SIM", async (
-            [FromForm] DatasetUploadDto payload,
-            IUnitOfWork uow,
-            CancellationToken ct) =>
+        app.MapPost("/api/SIM", async ([FromForm] DatasetUploadDto payload, IUnitOfWork uow, CancellationToken ct) =>
         {
-            if (payload is null)
-                return Results.BadRequest("Missing dataset file. Please upload JSON file.");
-            var file = payload.File;
-            if (file is null ||
-                file.Length == 0 ||
-               !file.FileName.EndsWith("json", StringComparison.InvariantCultureIgnoreCase))
-                return TypedResults.Problem(
-                    statusCode: 405,
-                    title: "Unsupported File Format",
-                    detail: "Only JSON files are supported.");
-
-            SimDataWrapper? simDataWrapper;
-            try
-            {
-                using var reader = new StreamReader(file.OpenReadStream());
-                var jsonString = await reader.ReadToEndAsync();
-                simDataWrapper = JsonSerializer.Deserialize<SimDataWrapper>(jsonString);
-            }
-            catch
-            {
-                return TypedResults.Problem(
-                    statusCode: 405,
-                    title: "Invalid Input",
-                    detail: "JSON file schema is invalid. File schema does not match expected schema.");
-            }
-
-            if (simDataWrapper is null || !simDataWrapper.SimCards.Any())
-                return Results.BadRequest("Empty data set.");
-
-            using var sha = SHA256.Create();
-            using var stream = file.OpenReadStream();
-            var hashBytes = sha.ComputeHash(stream);
-            var hashString = Convert.ToHexString(hashBytes);
-
-            var exists = await uow.DatasetRepository
-            .GetAsQueryable()
-            .AsNoTracking()
-            .FirstOrDefaultAsync(d => d.FileHash == hashString, ct);
-            if (exists != null)
-                return Results.Conflict("Dataset with the same data already uploaded.");
-            var dataset = new Dataset(hashString);
-            await uow.DatasetRepository.AddAsync(dataset, ct);
-            await uow.SaveChangesAsync();
-
-            foreach (var item in simDataWrapper.SimCards)
-            {
-                var simcard = new SimCard
+            if (payload is null) return Results.BadRequest("Missing dataset file. Please upload JSON file.");
+            var uploadedFile = payload.File;
+            var result = await uploadedFile.ValidateFileType(".json")
+                .Bind(file => file.VerifyIsNotEmpty())
+                .Bind(file => file.VerifyIsNotDuplicate(uow))
+                .BindAsync(async file => await file.DeserializeAsync<SimDataWrapper>())
+                .BindAsync(data => Task.FromResult(data.VerifyIsNotEmpty()))
+                .TapAsync(async simdata =>
                 {
-                    DatasetId = dataset.Id,
-                    OrganizationId = item.OrganizationId,
-                    PhoneNumberString = item.PhoneNumberString,
-                    PhoneNumberInt = item.PhoneNumberInt,
-                    PhoneNumberLocal = item.PhoneNumberLocal,
-                    IMEI = item.IMEI,
-                    SIMNumber = item.SIMNumber,
-                    AddedDate = item.AddedDate.HasValue ?
-                                item.AddedDate.Value.ToUniversalTime() :
-                                null,
-                    Status = item.Status,
-                    Locked = item.Locked,
-                    LockDate = item.LockDate,
-                    CanLock = item.CanLock
-                };
-                await uow.SimCardRepository.AddAsync(simcard, ct);
-            }
+                    var hashString = uploadedFile.ComputeContentHash();
+                    var dataset = new Dataset(hashString!);
+                    await uow.DatasetRepository.AddAsync(dataset, ct);
+                    await uow.SaveChangesAsync();
 
-            await uow.SaveChangesAsync();
-            return Results.Ok();
+                    foreach (var item in simdata.SimCards)
+                    {
+                        var simcard = new SimCard
+                        {
+                            DatasetId = dataset.Id,
+                            OrganizationId = item.OrganizationId,
+                            PhoneNumberString = item.PhoneNumberString,
+                            PhoneNumberInt = item.PhoneNumberInt,
+                            PhoneNumberLocal = item.PhoneNumberLocal,
+                            IMEI = item.IMEI,
+                            SIMNumber = item.SIMNumber,
+                            AddedDate = item.AddedDate.HasValue ?
+                                        item.AddedDate.Value.ToUniversalTime() :
+                                        null,
+                            Status = item.Status,
+                            Locked = item.Locked,
+                            LockDate = item.LockDate,
+                            CanLock = item.CanLock
+                        };
+                        await uow.SimCardRepository.AddAsync(simcard, ct);
+                    }
+
+                    await uow.SaveChangesAsync();
+                })
+                .MatchAsync(onSuccess: value => Task.FromResult<IResult>(Results.Ok("File upload successful")), onFailure: error => Task.FromResult<IResult>(error.Type switch
+                {
+                    ErrorType.InvalidFileFormat => TypedResults.Problem(statusCode: 405, title: nameof(ErrorType.InvalidFileFormat), detail: error.Description),
+                    ErrorType.FileIsEmpty => TypedResults.Problem(statusCode: 405, title: nameof(ErrorType.FileIsEmpty), detail: error.Description),
+                    ErrorType.DuplicateInsert => TypedResults.Problem(statusCode: 409, title: nameof(ErrorType.DuplicateInsert), detail: error.Description),
+                    ErrorType.InvalidSchema => TypedResults.Problem(statusCode: 405, title: nameof(ErrorType.InvalidSchema), detail: error.Description),
+                    ErrorType.InvalidOperaton => TypedResults.Problem(statusCode: 500, title: nameof(ErrorType.InvalidOperaton), detail: error.Description),
+                    ErrorType.Exception => TypedResults.Problem(statusCode: 500, title: nameof(ErrorType.Exception), detail: error.Description),
+                    _ => TypedResults.Problem(statusCode: 500, title: "InternalServerError", detail: error.Description)
+                }));
+            return result;
         })
         .Accepts<DatasetUploadDto>("multipart/form-data")
         .Produces(StatusCodes.Status200OK)
