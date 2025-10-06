@@ -1,4 +1,4 @@
-//# ApexBI Technical Assessment Web API
+# ApexBI Technical Assessment Web API
 ## Setup
 Clone repo to a local folder and open in Visual Studio. <br>
 ### Run Configurations
